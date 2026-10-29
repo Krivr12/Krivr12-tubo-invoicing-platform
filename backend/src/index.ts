@@ -1,11 +1,13 @@
 import express from 'express';
+import { env, envFile } from './config/env.js';
 
-// Placeholder entry point for Step 3.
-// Env validation (Step 6) and the /health route (Step 10) are added in later steps.
+// The /health route is added in Step 10.
 const app = express();
 
-const PORT = 3000;
-
-app.listen(PORT, () => {
-  console.log(`Tubo backend listening on port ${PORT}`);
+app.listen(env.PORT, () => {
+  const supabaseHost = new URL(env.SUPABASE_URL).host;
+  console.log(
+    `Tubo backend listening on port ${env.PORT} ` +
+      `(NODE_ENV=${env.NODE_ENV}, env file=${envFile ?? 'none'}, supabase=${supabaseHost})`,
+  );
 });
