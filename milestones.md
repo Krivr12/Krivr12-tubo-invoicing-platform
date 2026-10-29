@@ -28,6 +28,7 @@
 | Production deployment (D9) | Production **will be deployed** (not just documented); hosting provider still to be chosen (see D11) |
 | Written answers (D10) | Inside `README.md` |
 | Hosting (D11) | Everything on **Vercel**, Hobby plan. No long-running worker: processing is triggered **on demand** after the API responds, with a **daily safety-net cron** |
+| Scheduling and deployment (D14) | **Vercel only.** Scheduled jobs use Vercel Cron (`vercel.json`) exclusively. Supabase is used only for Postgres and Auth: no `pg_cron`, no Supabase scheduled functions, no Supabase Edge Functions, and no Supabase hosting or deployment of any part of the app |
 | Government API in prod (D12) | Prod reaches the government API through a configurable URL (`GOVERNMENT_API_BASE_URL`); only the mock exists for now |
 | Join code expiry (D1) | Join codes expire **7 days** after generation |
 | User roles | `profiles.role` with two values: `admin` and `member`; what each role may do is still to be defined (see M1) |
@@ -56,6 +57,7 @@
 | D10 | Where written answers (C1 to N) live | Submission needs them somewhere reviewable | ✅ **Confirmed:** inside `README.md` |
 | D11 | Hosting provider | One provider for everything was requested | ✅ **Confirmed:** Vercel Hobby, on-demand trigger + daily safety-net cron. Consequence: slow automatic retries (see M5 known limitation). |
 | D13 | Queue mechanism on serverless | pg-boss was built around a long-lived process | ✅ **Confirmed:** database-table queue, pg-boss dropped |
+| D14 | Scheduling and deployment platform | Keeps the scheduler and hosting in one place, so Supabase is not used for cron or deployment | ✅ **Confirmed:** Vercel only for scheduling (Vercel Cron) and deployment. Supabase provides Postgres and Auth only. No `pg_cron`, Supabase scheduled functions, or Supabase Edge Functions. |
 | D12 | Which "government API" prod points at | No real government service exists for this assessment | ✅ **Confirmed:** configurable URL (`GOVERNMENT_API_BASE_URL`), mock only for now. **Still open:** whether the mock is deployed on the same provider so prod invoices can actually reach `SUBMITTED`. |
 
 ---
@@ -138,16 +140,16 @@ tubo/
 **Covers:** Part O, Part P (setup), Part E2
 **Goal:** A clean, reproducible project skeleton with dev and prod fully separated.
 
-- [x] Initialize Git repo; add `.gitignore`, first commit, and create `main` and `dev` branches; all work happens on `feature/*` branches merged into `dev`, and `dev` is merged into `main` for production releases
-- [x] Map branches to environments: `dev` branch uses the dev Supabase project, `main` uses the prod project (document this in the README)
-- [x] Create two Supabase cloud projects: `tubo-dev` and `tubo-prod`
-- [x] Scaffold `backend/` (Express + TypeScript strict) and `frontend/` (Vite + React + TypeScript)
-- [x] Install Tailwind and initialize shadcn/ui; verify latest stable versions at install time
-- [x] Environment config: `.env.example` files committed; real `.env.*` files ignored; env vars validated with Zod at startup (app refuses to boot on invalid config)
-- [x] Environment switching: `NODE_ENV` and scripts (`dev`, `build`, `start`) that load the correct Supabase project
-- [x] Lint, format, and TypeScript config (ESLint, Prettier)
-- [x] Write Kiro steering docs for naming, structure, security, error handling, and Git workflow
-- [ ] **Verify the Vercel assumptions now, before building on them** and record the results under README assumptions: Express deploys as a Vercel function; `waitUntil` works and how it behaves on Hobby; the real function max duration for your plan; a daily cron deploys on Hobby; which Supabase connection string suits serverless functions
+- [] Initialize Git repo; add `.gitignore`, first commit, and create `main` and `dev` branches; all work happens on `feature/*` branches merged into `dev`, and `dev` is merged into `main` for production releases
+- [] Map branches to environments: `dev` branch uses the dev Supabase project, `main` uses the prod project (document this in the README)
+- [] Create two Supabase cloud projects: `tubo-dev` and `tubo-prod`
+- [] Scaffold `backend/` (Express + TypeScript strict) and `frontend/` (Vite + React + TypeScript)
+- [] Install Tailwind and initialize shadcn/ui; verify latest stable versions at install time
+- [] Environment config: `.env.example` files committed; real `.env.*` files ignored; env vars validated with Zod at startup (app refuses to boot on invalid config)
+- [] Environment switching: `NODE_ENV` and scripts (`dev`, `build`, `start`) that load the correct Supabase project
+- [] Lint, format, and TypeScript config (ESLint, Prettier)
+- [] Write Kiro steering docs for naming, structure, security, error handling, and Git workflow
+- [] **Verify the Vercel assumptions now, before building on them** and record the results under README assumptions: Express deploys as a Vercel function; `waitUntil` works and how it behaves on Hobby; the real function max duration for your plan; a daily Vercel Cron deploys on Hobby; which Supabase connection string suits serverless functions. Scheduling is Vercel Cron only (D14).
 
 **Done when:** both apps start, a `/health` endpoint responds, and switching environments changes which Supabase project is used with no code edits.
 
@@ -250,7 +252,7 @@ tubo/
 - [ ] Government client in `integrations/`: request **timeout set well below Vercel's function max duration** (value verified in M0), error classification, `Idempotency-Key` = invoice ID, base URL from `GOVERNMENT_API_BASE_URL` validated at startup (D12)
 - [ ] Outcome handling: `200` → `SUBMITTED`; `503` or timeout → `FAILED` with `failure_type = RETRYABLE` and a `next_retry_at` from a backoff schedule; `400` → `FAILED` with `failure_type = PERMANENT` (never retried)
 - [ ] Limited immediate retries inside the on-demand invocation (a few attempts, seconds apart, within the time budget); anything beyond that waits for the cron or a manual retry
-- [ ] Safety-net cron endpoint (for example `/api/cron/process-invoices`) scheduled **daily** in `vercel.json`, protected by a `CRON_SECRET` bearer check; processes a bounded batch of due invoices: `PENDING`, retryable `FAILED` with `next_retry_at <= now`, and `PROCESSING` with an expired `locked_until`
+- [ ] Safety-net cron endpoint (for example `/api/cron/process-invoices`) scheduled **daily** by Vercel Cron in `vercel.json` (D14: no `pg_cron` or other Supabase scheduling), protected by a `CRON_SECRET` bearer check; processes a bounded batch of due invoices: `PENDING`, retryable `FAILED` with `next_retry_at <= now`, and `PROCESSING` with an expired `locked_until`
 - [ ] Batch size and per-invocation concurrency caps, configurable (protects the government API, relates to K2)
 - [ ] Draft answers to H1 to H3, K2, K3, N
 
@@ -326,7 +328,7 @@ tubo/
 - [ ] Three Vercel projects: frontend, API (Express), and the mock government API
 - [ ] Environment mapping: `main` deploys to Vercel **Production** using the prod Supabase project; `dev` and feature branches deploy as **Preview** using the dev Supabase project (verify how env vars are scoped on the Hobby plan)
 - [ ] Environment variables set in Vercel's settings, never in Git: Supabase keys (the service-role key only on the API project), `CRON_SECRET`, and `GOVERNMENT_API_BASE_URL` pointing at the deployed mock (D12)
-- [ ] Daily cron declared in the API project's `vercel.json` and confirmed to deploy on Hobby
+- [ ] Daily Vercel Cron declared in the API project's `vercel.json` and confirmed to deploy on Hobby (D14: the only scheduler; nothing is scheduled or deployed through Supabase)
 - [ ] Production CORS allowlist limited to the prod frontend origin
 - [ ] Create prod companies and join codes with a one-off script; **no dev seed data in prod**
 - [ ] Smoke test in prod: sign up with a company identifier and join code, create an invoice, watch it reach `SUBMITTED`, trigger a retry on a failed one
