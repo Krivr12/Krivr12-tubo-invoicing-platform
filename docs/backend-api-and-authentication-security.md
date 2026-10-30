@@ -13,10 +13,10 @@ The backend is Node.js, Express and TypeScript. Prisma talks to PostgreSQL. Zod 
 | Method | Path | What it does | Auth |
 |---|---|---|---|
 | `POST` | `/api/auth/login` | Checks email and password, returns a JWT | No |
-| `POST` | `/api/invoices` | Validates and stores an invoice as `PENDING` | Bearer token |
+| `POST` | `/api/invoices` | Validates and stores an invoice as `PENDING`, returns `202`. A separate worker submits it. | Bearer token |
 | `GET` | `/api/invoices` | Lists the company's invoices (status, number, date, pagination) | Bearer token |
 | `GET` | `/api/invoices/:id` | Returns one invoice with its items and processing logs | Bearer token |
-| `POST` | `/api/invoices/:id/retry` | Moves a `FAILED` invoice back to `PENDING` | Bearer token |
+| `POST` | `/api/invoices/:id/retry` | Moves a `FAILED` invoice with a retryable failure back to `PENDING`. Anything else returns `409`. | Bearer token |
 
 Every request follows the same path, and each layer has one job:
 
@@ -149,7 +149,7 @@ Two more items I would add for write endpoints: a tighter rate limit on `/api/au
 2. **Add tests for tenant isolation** (User B asking for User A's invoice returns 404). Right now this is only checked by hand in Bruno.
 3. **Replace `cors()`** with an allowlist from config, add `helmet`, set a body size limit, and pin the JWT algorithm.
 4. **Add a stricter rate limit** on login and invoice creation.
-5. **Use one error shape** (`{ error: { code, message, details } }`) with stable codes. The API currently returns plain `{ message }` bodies, and the retry guard returns `400` where the project rules say `409`.
+5. **Use one error shape** (`{ error: { code, message, details } }`) with stable codes. Most errors are still plain `{ message }` bodies. Only the retry endpoint returns a `code` (`RETRY_NOT_ALLOWED` with `409`, `INVOICE_NOT_FOUND` with `404`).
 6. **Make login timing equal** for unknown email and wrong password. Today an unknown email returns before the bcrypt check, so response time can reveal which emails exist.
 7. **Calculate money with `Decimal`**, not JavaScript numbers. `service.ts` sums with floating point and rounds with `toFixed(2)`, which can drift on large invoices.
 8. **Decide roles and onboarding.** Admin and member permissions, and how a company's first user is created, are not decided yet. This document makes no assumption about either.
