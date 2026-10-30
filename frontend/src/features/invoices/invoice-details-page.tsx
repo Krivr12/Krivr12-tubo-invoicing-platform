@@ -23,7 +23,7 @@ export function InvoiceDetailsPage({ invoice, onBack, onRetry }: InvoiceDetailsP
           </div>
           <div className="flex items-center space-x-3">
             <StatusBadge status={invoice.status} />
-            {invoice.status === 'FAILED' && (
+            {invoice.status === 'FAILED' && invoice.failureType === 'RETRYABLE' && (
               <button
                 onClick={() => onRetry(invoice.id)}
                 className="bg-amber-600 text-white text-xs px-3 py-1.5 rounded font-medium hover:bg-amber-700"
@@ -33,6 +33,22 @@ export function InvoiceDetailsPage({ invoice, onBack, onRetry }: InvoiceDetailsP
             )}
           </div>
         </div>
+
+        {invoice.status === 'FAILED' && invoice.failureType === 'PERMANENT' && (
+          <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2 mb-4">
+            The government service rejected this invoice. It cannot be retried.
+          </p>
+        )}
+        {invoice.status === 'FAILED' && invoice.failureType === 'RETRYABLE' && invoice.nextRetryAt && (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2 mb-4">
+            Automatic retry scheduled for {new Date(invoice.nextRetryAt).toLocaleString()}.
+          </p>
+        )}
+        {invoice.attemptCount !== undefined && invoice.attemptCount > 0 && (
+          <p className="text-xs text-slate-500 mb-4">
+            Submission attempts: {invoice.attemptCount}
+          </p>
+        )}
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-6">
           <div>
@@ -111,6 +127,9 @@ export function InvoiceDetailsPage({ invoice, onBack, onRetry }: InvoiceDetailsP
               <div>
                 <span className="font-mono font-bold mr-2 text-slate-700">[{log.level}]</span>
                 <span>{log.message}</span>
+                {log.attemptNumber != null && log.httpStatus != null && (
+                  <span className="ml-2 text-slate-500">(HTTP {log.httpStatus})</span>
+                )}
               </div>
               <span className="text-slate-400">
                 {new Date(log.createdAt).toLocaleString()}

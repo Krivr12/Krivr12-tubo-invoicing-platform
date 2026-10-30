@@ -1,7 +1,7 @@
-import { PrismaClient, InvoiceStatus, Prisma } from '@prisma/client';
+import { PrismaClient, InvoiceStatus, FailureType, Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { createInvoiceSchema, listInvoiceQuerySchema } from './schema.js';
-import { processInvoiceAsync } from './processor.js'; 
+import { ENV } from '../../config/env.js';
 
 const prisma = new PrismaClient();
 
@@ -27,6 +27,8 @@ export async function createInvoice(
         taxAmount: new Prisma.Decimal(taxAmount.toFixed(2)),
         totalAmount: new Prisma.Decimal(totalAmount.toFixed(2)),
         status: InvoiceStatus.PENDING,
+        nextRetryAt: new Date(), // due immediately; the worker claims it
+        maxAttempts: ENV.MAX_RETRY_ATTEMPTS,
         items: {
           create: data.items.map((item) => ({
             description: item.description,
@@ -50,9 +52,7 @@ export async function createInvoice(
     });
   });
 
- 
-  void processInvoiceAsync(invoice.id);
-
+  // Government submission never runs in the request. The worker process picks the row up.
   return invoice;
 }
 
@@ -115,49 +115,64 @@ export async function getInvoiceById(companyId: string, invoiceId: string) {
   });
 }
 
-export async function retryFailedInvoice(companyId: string, invoiceId: string) {
-  const result = await prisma.$transaction(async (tx) => {
+export type RetryResult =
+  | { status: 200; data: NonNullable<Awaited<ReturnType<typeof getInvoiceById>>> }
+  | { status: 404 | 409; code: 'INVOICE_NOT_FOUND' | 'RETRY_NOT_ALLOWED'; message: string };
+
+/**
+ * Manual retry. Allowed only for FAILED invoices with failureType RETRYABLE.
+ * The invoice goes back to PENDING and the worker picks it up. Attempt numbers keep
+ * counting up, and maxAttempts is raised so the new cycle gets a full set of attempts.
+ */
+export async function retryFailedInvoice(companyId: string, invoiceId: string): Promise<RetryResult> {
+  return prisma.$transaction(async (tx) => {
     const invoice = await tx.invoice.findFirst({
       where: { id: invoiceId, companyId },
+      select: { attemptCount: true },
     });
 
     if (!invoice) {
-      return { status: 404, message: 'Invoice not found' };
+      return { status: 404, code: 'INVOICE_NOT_FOUND', message: 'Invoice not found' } as const;
     }
 
-    if (invoice.status !== InvoiceStatus.FAILED) {
-      return {
-        status: 400,
-        message: `Only invoices in FAILED status can be retried. Current status is ${invoice.status}`,
-      };
-    }
-
-    const updated = await tx.invoice.update({
-      where: { id: invoiceId },
+    // Conditional update: if the worker changed the row in the meantime, nothing matches.
+    const updated = await tx.invoice.updateMany({
+      where: {
+        id: invoiceId,
+        companyId,
+        status: InvoiceStatus.FAILED,
+        failureType: FailureType.RETRYABLE,
+      },
       data: {
         status: InvoiceStatus.PENDING,
-        logs: {
-          create: {
-            level: 'INFO',
-            message: 'Manual retry initiated. Resetting status to PENDING.',
-          },
-        },
-      },
-      include: {
-        items: true,
-        logs: {
-          orderBy: { createdAt: 'desc' },
-        },
+        failureType: null,
+        nextRetryAt: new Date(),
+        lockedUntil: null,
+        maxAttempts: invoice.attemptCount + ENV.MAX_RETRY_ATTEMPTS,
       },
     });
 
-    return { status: 200, data: updated };
+    if (updated.count === 0) {
+      return {
+        status: 409,
+        code: 'RETRY_NOT_ALLOWED',
+        message: 'Only FAILED invoices with a retryable failure can be retried.',
+      } as const;
+    }
+
+    await tx.processingLog.create({
+      data: {
+        invoiceId,
+        level: 'INFO',
+        message: 'Manual retry requested. The invoice is queued for another submission.',
+      },
+    });
+
+    const data = await tx.invoice.findFirstOrThrow({
+      where: { id: invoiceId, companyId },
+      include: { items: true, logs: { orderBy: { createdAt: 'desc' } } },
+    });
+
+    return { status: 200, data } as const;
   });
-
-  
-  if (result.status === 200 && result.data) {
-    void processInvoiceAsync(result.data.id);
-  }
-
-  return result;
 }

@@ -8,7 +8,8 @@ export async function create(req: AuthenticatedRequest, res: Response, next: Nex
     const companyId = req.user!.companyId;
     const validatedData = createInvoiceSchema.parse(req.body);
     const invoice = await invoiceService.createInvoice(companyId, validatedData);
-    res.status(201).json(invoice);
+    // 202: the invoice is accepted and stored. Government submission happens later, in the worker.
+    res.status(202).json(invoice);
   } catch (error) {
     next(error);
   }
@@ -49,7 +50,7 @@ export async function retry(req: AuthenticatedRequest, res: Response, next: Next
     const result = await invoiceService.retryFailedInvoice(companyId, id);
 
     if (result.status !== 200) {
-      res.status(result.status).json({ message: result.message });
+      res.status(result.status).json({ code: result.code, message: result.message });
       return;
     }
 

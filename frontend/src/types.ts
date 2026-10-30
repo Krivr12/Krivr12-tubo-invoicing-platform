@@ -9,11 +9,19 @@ export interface InvoiceItem {
   lineTotal: number;
 }
 
+export type FailureType = 'RETRYABLE' | 'PERMANENT';
+
 export interface ProcessingLog {
   id: string;
   level: 'INFO' | 'WARN' | 'ERROR';
   message: string;
   createdAt: string;
+  attemptNumber?: number | null;
+  startedAt?: string | null;
+  endedAt?: string | null;
+  httpStatus?: number | null;
+  errorMessage?: string | null;
+  processingStatus?: InvoiceStatus | null;
 }
 
 export interface Invoice {
@@ -28,6 +36,10 @@ export interface Invoice {
   taxAmount: string | number;
   totalAmount: string | number;
   status: InvoiceStatus;
+  failureType?: FailureType | null;
+  attemptCount?: number;
+  maxAttempts?: number;
+  nextRetryAt?: string | null;
   createdAt: string;
   items?: InvoiceItem[];
   logs?: ProcessingLog[];

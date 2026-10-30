@@ -42,6 +42,11 @@ This document covers Part B (Data Model) and Part C (Database Design) of the Tub
 | `taxAmount` | DECIMAL(12,2) | | NOT NULL |
 | `totalAmount` | DECIMAL(12,2) | | NOT NULL |
 | `status` | `InvoiceStatus` enum (`PENDING`, `PROCESSING`, `SUBMITTED`, `FAILED`) | INDEX (with `companyId`) | NOT NULL, default `PENDING` |
+| `failureType` | `FailureType` enum (`RETRYABLE`, `PERMANENT`) | | Nullable. Set only while `status` is `FAILED` |
+| `attemptCount` | INTEGER | | NOT NULL, default `0`. Incremented by the worker when it claims the row |
+| `maxAttempts` | INTEGER | | NOT NULL, default `8`. Raised by a manual retry |
+| `nextRetryAt` | TIMESTAMP(3) | INDEX (with `status`) | Nullable. The worker may claim the row once this time is reached |
+| `lockedUntil` | TIMESTAMP(3) | | Nullable. Lease set while `PROCESSING`. An expired lease means the worker crashed |
 | `createdAt` | TIMESTAMP(3) | | NOT NULL, default `CURRENT_TIMESTAMP` |
 | `updatedAt` | TIMESTAMP(3) | | NOT NULL |
 
@@ -50,6 +55,7 @@ Constraints on `invoices`:
 - `UNIQUE (companyId, invoiceNumber)`: `invoices_companyId_invoiceNumber_key`
 - Index `(companyId, status)`: `invoices_companyId_status_idx`
 - Index `(companyId, invoiceDate)`: `invoices_companyId_invoiceDate_idx`
+- Index `(status, nextRetryAt)`: `invoices_status_nextRetryAt_idx`, used by the worker's claim query
 
 ### 4. `invoice_items`
 
@@ -73,7 +79,15 @@ Constraints on `invoices`:
 | `level` | `LogLevel` enum (`INFO`, `WARN`, `ERROR`) | | NOT NULL, default `INFO` |
 | `message` | TEXT | | NOT NULL |
 | `metadata` | JSONB | | Nullable |
+| `attemptNumber` | INTEGER | UNIQUE (with `invoiceId`) | Nullable. Set on attempt rows. NULL for plain event rows |
+| `startedAt` | TIMESTAMP(3) | | Nullable. When the attempt was claimed |
+| `endedAt` | TIMESTAMP(3) | | Nullable. NULL while the attempt is running |
+| `httpStatus` | INTEGER | | Nullable. NULL on timeout or before a result |
+| `errorMessage` | TEXT | | Nullable. A safe summary, not the government response body |
+| `processingStatus` | `InvoiceStatus` enum | | Nullable. Result of the attempt: `PROCESSING`, `SUBMITTED`, or `FAILED` |
 | `createdAt` | TIMESTAMP(3) | | NOT NULL, default `CURRENT_TIMESTAMP` |
+
+Each processing attempt is one row with an `attemptNumber`. The row is created when the worker claims the invoice and completed when the result is recorded. Attempts are never overwritten or deleted. PostgreSQL treats NULLs as distinct in a unique index, so event rows without an attempt number do not collide.
 
 ## Relationships
 
@@ -101,10 +115,7 @@ Both requests try to insert `INV-10001` for ABC Corporation. The database lets o
 
 ## Known gaps against the assessment
 
-These items are not yet in the schema. They are needed for retries, attempt history, and the queue design:
+Attempt history, failure type, and the queue columns are now in the schema (migration `20261030090000_add_retry_queue_columns`). The remaining gaps are:
 
-- **Attempt history.** `processing_logs` has no `attemptNumber`, `startedAt`, `endedAt`, `httpStatus`, or `processingStatus` columns. Each attempt needs these to meet Part L.
-- **Failure type.** `invoices` has no `failureType` column (`RETRYABLE` or `PERMANENT`), which Part L and the README require.
-- **Queue columns.** `invoices` has no `attemptCount`, `nextRetryAt`, or `lockedUntil` columns. The queue design needs these for `FOR UPDATE SKIP LOCKED`.
 - **Naming and precision.** The steering rules call for `snake_case` columns and `numeric(14,2)` money. The current schema uses `camelCase` and `DECIMAL(12,2)`.
 - **Company identifier.** Joining a company needs a `slug` column on `companies`, which the product rules require.

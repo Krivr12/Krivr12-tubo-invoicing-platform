@@ -20,6 +20,11 @@ enum LogLevel {
   ERROR
 }
 
+enum FailureType {
+  RETRYABLE
+  PERMANENT
+}
+
 model Company {
   id        String    @id @default(uuid())
   name      String
@@ -58,6 +63,14 @@ model Invoice {
   taxAmount     Decimal        @db.Decimal(12, 2)
   totalAmount   Decimal        @db.Decimal(12, 2)
   status        InvoiceStatus  @default(PENDING)
+
+  // Retry and queue columns (Part H and L). The invoices table is the work queue.
+  failureType   FailureType?   // set only while status is FAILED
+  attemptCount  Int            @default(0)
+  maxAttempts   Int            @default(8)
+  nextRetryAt   DateTime?      // when the worker may claim this row next
+  lockedUntil   DateTime?      // lease set by the worker while PROCESSING
+
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -68,6 +81,7 @@ model Invoice {
   @@unique([companyId, invoiceNumber])
   @@index([companyId, status])
   @@index([companyId, invoiceDate])
+  @@index([status, nextRetryAt])
   @@map("invoices")
 }
 
@@ -92,8 +106,19 @@ model ProcessingLog {
   message   String
   metadata  Json?
   createdAt DateTime @default(now())
+
+  // One row per processing attempt (Part L). Rows without an attemptNumber are plain events.
+  attemptNumber    Int?
+  startedAt        DateTime?
+  endedAt          DateTime?
+  httpStatus       Int?
+  errorMessage     String?
+  processingStatus InvoiceStatus?
+
   invoice   Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 
+  // NULL attempt numbers do not collide in PostgreSQL, so event rows are unaffected.
+  @@unique([invoiceId, attemptNumber])
   @@index([invoiceId])
   @@map("processing_logs")
 }

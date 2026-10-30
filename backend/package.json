@@ -4,8 +4,10 @@
   "main": "src/app.ts",
   "scripts": {
     "dev": "tsx watch src/app.ts",
+    "worker": "tsx watch src/worker.ts",
     "build": "tsc",
     "start": "node dist/app.js",
+    "start:worker": "node dist/worker.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "tsx prisma/seed.ts"
