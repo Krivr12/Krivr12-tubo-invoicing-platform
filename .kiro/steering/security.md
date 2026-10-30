@@ -1,56 +1,56 @@
 # Security Rules
 
-These rules come from `milestones.md` (Section 1, Section 2 D1 and D3, and Section 4) and the M2 tasks.
-
 ## Secrets
 
-- Secrets live only in environment variables. They are never committed and never written in code or logs.
-- Commit only `.env.example` files, with placeholder values. `.env*` (except `.env.example`) is in `.gitignore`.
-- Production values live in Vercel's environment variable settings.
-- Never commit a database password, JWT secret, service-role key, or `CRON_SECRET`.
-
-## Keys
-
-- **Service-role key:** backend only, and only on the API project in Vercel. Never in the frontend, and never in a `VITE_` variable.
-- **Anon key:** used by the frontend. It is public, but it still belongs in the environment, not in code.
-- Dev and prod use different keys, URLs, and databases.
-
-## Tenant isolation (D3)
-
-- `company_id` always comes from the verified JWT (through the loaded user profile). It never comes from the request body, the URL, or a query string.
-- Every repository method takes `companyId` as a required parameter. No unscoped invoice query may exist.
-- Requesting another company's invoice returns `404`, not `403`, so invoice IDs are not revealed.
-- RLS is enabled on all tables with company-scoped policies as a backup layer.
-- Tenant isolation is proven by tests (M2).
+- Secrets come only from environment variables. Code never contains them, and logs never print them.
+- Commit only `.env.example` files, with placeholder values. `.env` and other `.env*` files are gitignored.
+- Never commit the database password, `JWT_SECRET`, or government API credentials.
+- The credentials in `docker-compose.yml` are for the local Postgres container only. Use different values for any shared or hosted database.
+- The backend refuses to start if `JWT_SECRET` is missing. The code has no fallback secret value.
 
 ## Authentication
 
-- Authentication uses Supabase Auth with email and password.
-- The backend verifies the Supabase JWT on every protected request.
-- The frontend attaches the token to API calls and sends the user to login on `401`.
+- Authentication uses email and password. Passwords are hashed with bcrypt before storage. Plain passwords are never stored or logged.
+- Login returns a JWT signed with `JWT_SECRET`. Token lifetime comes from `JWT_EXPIRES_IN`.
+- The `authenticate` middleware verifies the token on every protected route. It accepts only the expected signing algorithm.
+- A missing, malformed, or invalid token returns `401`.
+- The frontend attaches the token to API calls and sends the user to the login page on `401`.
 
-## Join codes (D1)
+## Tenant isolation
 
-- A join code is stored only as a slow hash (bcrypt or a similar slow hash).
+- `companyId` comes only from the verified token (`req.user.companyId`). It is never read from the request body, the URL, or the query string.
+- Every query on company data includes `companyId` in its `where` clause. Service functions take `companyId` as a required parameter. No unscoped invoice query may exist.
+- Another company's invoice returns `404`, not `403`, so invoice IDs are not revealed.
+- The Bruno tenant isolation requests check this by hand. Add automated tests that cover it.
+
+## Roles and onboarding
+
+- Role permissions for `admin` and `member` are not decided. Do not assume either role's permissions.
+- How the first admin of a company is created is not decided.
+
+## Join codes (planned)
+
+These rules apply when join codes are built. They are not in the schema yet.
+
+- Store a join code only as a slow hash (bcrypt or similar). Show the plain code once, at creation.
 - A join code expires 7 days after generation. An expired code gets the same generic error as a wrong code.
 - Sign-up returns one generic error for an unknown company and for an invalid code, so company existence is not revealed.
-- Join-code attempts are rate limited.
-- Join-code rotation is a one-off script. It prints the new plain code once and stores only its hash and new expiry.
+- Rate limit join-code attempts.
+- Rotating a join code is a one-off script. It prints the new code once and stores only its hash and new expiry.
 
 ## HTTP hardening
 
-- `helmet` is enabled on the API.
-- CORS uses an allowlist. In production, the allowlist contains only the production frontend origin.
-- Rate limiting applies to auth endpoints and write endpoints.
-- A request body size limit is set.
-- The cron endpoint requires a `CRON_SECRET` bearer token.
+- Use `helmet` on the API. It is not installed yet.
+- CORS uses an allowlist read from config. In production the allowlist holds only the frontend origin. Do not use `cors()` with no options.
+- Rate limit the auth endpoints and the write endpoints. The global limiter is already in place.
+- Set an explicit body size limit in `express.json()`.
 
 ## Input and output
 
-- Every request body, query, and path parameter is validated with Zod.
-- Never return stack traces, database errors, or internal messages to clients. See `error-handling.md`.
-- Database constraints are the last line of defense, not the only validation.
+- Validate every request body, query, and path parameter with Zod.
+- Never return stack traces, database errors, SQL text, constraint names, or government response bodies to clients. See `error-handling.md`.
+- Database constraints (the unique key on company and invoice number, enum types, decimal types) are the last line of defense, not the only validation.
 
 ## Dependencies
 
-- Run `npm audit` before a release. Address high and critical findings (M9).
+- Run `npm audit` in `backend/` and `frontend/` before submission. Fix high and critical findings.

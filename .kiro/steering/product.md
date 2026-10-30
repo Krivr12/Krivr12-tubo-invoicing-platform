@@ -2,7 +2,7 @@
 
 Tubo is an electronic invoicing platform. Businesses send invoices to Tubo. Tubo validates and stores each invoice, then submits it to an external government invoicing service.
 
-This repository is a full-stack technical assessment. The source of requirements is `app_guide.md`. The implementation plan and decisions are in `milestones.md`. When the two disagree, `milestones.md` holds the confirmed decisions and `app_guide.md` holds the original requirements.
+This repository is a full-stack technical assessment. The target design and questions are in `docs/technical-assessment.md`. Endpoints are listed in `docs/api-endpoints.md`, and the data model is in `docs/data-model-and-design.md`. Written answers to the assessment questions go in `README.md`.
 
 ## Priority order
 
@@ -18,16 +18,18 @@ When trade-offs appear, apply this order:
 
 ## Core behavior
 
-- An invoice is never lost and never submitted twice, even when the server crashes or the government API times out.
-- `POST` accepts an invoice and returns `202 Accepted`. Submission to the government service happens after the response.
-- Invoice statuses are `PENDING`, `PROCESSING`, `SUBMITTED`, and `FAILED`. A `FAILED` invoice also has a `failure_type` of `RETRYABLE` or `PERMANENT`.
-- A `PERMANENT` failure (government HTTP 400) is never retried automatically.
-- Every processing attempt is stored as its own record. Earlier errors are never overwritten.
+- An invoice is never lost and never submitted twice, even when the server or worker crashes or the government service times out.
+- `POST /api/invoices` validates the request, stores the invoice as `PENDING`, and returns `202 Accepted` with the invoice ID. Government submission happens after the response, in the worker.
+- Invoice statuses are `PENDING`, `PROCESSING`, `SUBMITTED`, and `FAILED`.
+- A `FAILED` invoice has a `failureType` of `RETRYABLE` or `PERMANENT`.
+  - `PERMANENT` covers a government HTTP 400. It is never retried automatically, and a manual retry is not allowed.
+  - `RETRYABLE` covers a government HTTP 503 and a timeout. The worker retries it automatically with exponential backoff, using `nextRetryAt`, until the attempt limit is reached. After that the invoice stays `FAILED` and a manual retry is allowed.
+- Every processing attempt is stored as its own record in `processing_logs`, with attempt number, start and end times, HTTP status, error message, and the resulting status. Earlier records are never overwritten.
+- A crash during processing leaves the invoice in `PROCESSING` with an expired `lockedUntil`. The worker reclaims it on its next pass. The idempotency key prevents a second submission to the government service.
 - Each user belongs to exactly one company. A user must never read or change another company's data.
-- A user joins a company with a company identifier (`slug`) and a join code. Join codes expire 7 days after generation.
+- A user joins a company with a company identifier (`slug`) and a join code. Join codes expire 7 days after generation. This flow is planned and is not in the schema yet.
 
 ## Scope
 
-- Time budget: 2 days.
-- Production is deployed on Vercel. Scope cuts follow the cut-line rule in `milestones.md`, Section 3.
-- Written answers to the assessment questions live in `README.md`.
+- The assessment time budget is two days. When time runs short, cut from the bottom of the priority order first.
+- Document each production gap that is not built in `README.md`, with the reason it was left out.

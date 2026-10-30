@@ -1,12 +1,9 @@
 # Error Handling
 
-These rules come from the Error handling row in `milestones.md`, Section 4.
-
 ## Error classes
 
-- All expected errors extend a single `AppError` class.
-- Every `AppError` has a stable `code` (for example `INVOICE_NOT_FOUND`, `DUPLICATE_INVOICE`, `INVALID_JOIN_CODE`). Clients may rely on the code. The message is for humans and may change.
-- Put error classes in `backend/src/lib/`.
+- Expected errors extend a single `AppError` class, defined in `backend/src/middleware/errorHandler.ts`.
+- Every `AppError` has a stable `code`, such as `INVOICE_NOT_FOUND`, `DUPLICATE_INVOICE`, `RETRY_NOT_ALLOWED`, `INVOICE_TOTALS_MISMATCH`, or `INVALID_JOIN_CODE`. Clients may rely on the code. The message is for humans and may change.
 
 ## Response shape
 
@@ -22,33 +19,33 @@ Every error response uses this shape:
 }
 ```
 
-`details` is optional.
+`details` is optional. For validation errors, it lists each failing field and its message.
 
 ## Central middleware
 
-- One error-handling middleware at the end of the Express chain converts every error to the response shape above.
-- Controllers and services throw errors. They do not format error responses themselves.
-- Unexpected errors become `500` with a generic message.
+- One error handler sits at the end of the Express chain in `app.ts`. It converts every error to the shape above.
+- Controllers and services throw errors. They never format error responses themselves.
+- Zod errors become `400` with code `VALIDATION_FAILED`.
+- Prisma unique-constraint violations (`P2002`) become `409` with code `DUPLICATE_INVOICE`. Map only the known Prisma codes. Everything else is unexpected.
+- Unexpected errors become `500` with code `INTERNAL_ERROR` and the message "An unexpected error occurred."
 
 ## What never reaches the client
 
 - Stack traces.
 - Database errors, SQL text, or constraint names.
-- Internal service messages, such as government API response bodies, unless they are deliberately mapped to a safe message.
+- Government API response bodies or internal service messages. Map them to a safe message if the client needs to know the outcome.
 
 ## Logging
 
-- Every error is logged with the request ID.
-- Request IDs are generated per request and returned in a response header.
+- Log every error with the request ID.
+- Generate a request ID per request and return it in the `X-Request-Id` response header.
 - Logs must not contain secrets, tokens, join codes, or full invoice payloads.
 
 ## HTTP status codes
 
-The codes used by the API are `400`, `401`, `404`, `409`, `422`, and `500` (M3).
-
-- `401`: missing or invalid authentication.
-- `404`: resource not found, including another company's resource.
-- `409`: conflict, such as a duplicate invoice number or a retry on an ineligible invoice.
+- `400`: the request is malformed. Zod rejects the body, query, or path parameters.
+- `401`: authentication is missing or invalid.
+- `404`: the resource does not exist, including another company's resource.
+- `409`: a conflict. Examples: a duplicate invoice number for the company, or a retry on an invoice whose `failureType` is not `RETRYABLE`.
+- `422`: the request is well formed but breaks a business rule. Examples: a line total that does not equal quantity × unit price + tax, or invoice totals that do not match the items.
 - `500`: unexpected server error.
-
-Open item: which validation failures use `400` and which use `422` is not decided yet. Decide in M3 and record the decision in `milestones.md` before implementing.

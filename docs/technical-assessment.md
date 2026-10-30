@@ -1,7 +1,9 @@
 # TUBO – FULL-STACK DEVELOPER TECHNICAL ASSESSMENT
 
-**Candidate:**
+**Candidate:** Christopher Bryan Evangelista
+
 **Position:** Full-Stack Developer
+
 **Assessment Type:** Practical Development + Architecture + Technical Reasoning
 
 ---

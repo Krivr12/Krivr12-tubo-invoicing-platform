@@ -1,39 +1,47 @@
 # Technology Stack
 
-Only the decisions confirmed in `milestones.md` (Section 1 and Section 2) belong here. Anything still marked **[CONFIRM]** or open is listed at the end, and must not be assumed.
+Tubo runs on the developer's machine. PostgreSQL runs in Docker. The design does not depend on any hosted platform.
 
 ## Stack
 
 | Layer | Choice |
 |---|---|
-| Language | TypeScript, strict mode, in both frontend and backend |
+| Language | TypeScript, strict mode, in backend and frontend |
 | Backend | Node.js with Express |
-| Database | Supabase Postgres |
-| Authentication | Supabase Auth, email and password only (no OAuth) |
-| Frontend | React with Vite (SPA), Tailwind CSS, shadcn/ui, latest stable versions |
-| Frontend libraries | React Router, TanStack Query, react-hook-form with Zod |
-| Package manager | npm, with the lockfile committed |
-| Hosting | Vercel, Hobby plan, for every app (frontend, API, mock government API) |
-| Scheduling | Vercel Cron only (defined in `vercel.json`) |
+| ORM and migrations | Prisma (`backend/prisma/schema.prisma`) |
+| Database | PostgreSQL 16 in Docker (`docker-compose.yml`) |
+| Money | Prisma `Decimal` with `@db.Decimal(12, 2)` |
+| Validation | Zod |
+| Authentication | Email and password. Passwords are hashed with bcrypt. The backend signs JWTs with `JWT_SECRET`. |
+| Frontend | React with Vite (single-page app), TypeScript |
+| Package manager | npm, with `package-lock.json` committed in each app |
+
+Frontend libraries beyond React and Vite (UI kit, routing, data fetching, forms) are not chosen yet. Add each one to this table when it is chosen.
+
+## Local services
+
+| Service | How to run | Address |
+|---|---|---|
+| PostgreSQL | `docker compose up -d postgres` from the repository root | `localhost:5433` (container port 5432) |
+| Backend API | `npm run dev` in `backend/` | `http://localhost:4000` (from `PORT`) |
+| Frontend | `npm run dev` in `frontend/` | Vite's default address |
+| Government service | Local stand-in (see Rules) | Set by `GOVERNMENT_API_BASE_URL` |
+
+Database connection format: `DATABASE_URL=postgresql://<user>:<password>@localhost:5433/<database>`. Put real values in `backend/.env`. Never write them in code.
 
 ## Rules
 
-- **Scheduling and deployment (D14):** Vercel is the only scheduler and the only host. Supabase provides Postgres and Auth. Do not use `pg_cron`, Supabase scheduled functions, Supabase Edge Functions, or any Supabase deployment.
-- **Queue (D13):** a database-table queue in Postgres. Work is claimed with `FOR UPDATE SKIP LOCKED` on the `invoices` table (`status`, `attempt_count`, `next_retry_at`, `locked_until`). Do not use pg-boss or any other long-running worker library.
-- **Background work (D11):** after the API responds, processing starts with `waitUntil` from `@vercel/functions`. A daily Vercel Cron job is the safety net.
-- **Money:** `numeric(14,2)` in the database. Never use floating-point types for money.
-- **Environments (D2, Environments section of README):** `dev` branch uses the `tubo-dev` Supabase project. `main` uses `tubo-prod`. Each has its own keys and database.
-- **Backend data access (D3):** the backend uses the Supabase service-role key. Company scoping is enforced in code. RLS is enabled as a backup layer.
-- **Government API (D12):** the URL comes from `GOVERNMENT_API_BASE_URL`. A mock service ships in `backend/` and is deployed as its own Vercel project (D4, D11).
-- **Config and validation:** all environment variables are validated with Zod at startup. The app refuses to start on invalid config.
-- **JSON casing (D6):** database columns are `snake_case`. API JSON is `camelCase`. The repository layer maps between them.
-- **Join codes:** stored only as a slow hash (bcrypt or a similar slow hash). The plain code is shown once and never stored.
+- **Database access:** Prisma is the only database client. Schema changes go through Prisma migrations (see `structure.md`).
+- **Work queue:** the `invoices` table is the queue. A worker claims due rows with `SELECT ... FOR UPDATE SKIP LOCKED` (through Prisma `$queryRaw`) and sets `lockedUntil` on each claimed row. Do not add a message broker or a job library.
+- **Request path:** a `POST` to create an invoice stores the row as `PENDING` and returns `202 Accepted`. Government submission never runs inside the request.
+- **Worker process:** the worker runs as its own Node process, started by an npm script in `backend/`. A worker crash or restart must not stop the API.
+- **Government API:** the base URL comes from `GOVERNMENT_API_BASE_URL`. Code never hard-codes it.
+- **Local stand-in:** until a real government service exists, the submission call in `backend/src/modules/invoices/processor.ts` returns a random result: success (200), temporary failure (503), invalid invoice (400), or timeout. When a real service exists, replace the stand-in with an HTTP call to `GOVERNMENT_API_BASE_URL`.
+- **Idempotency key:** every submission sends the invoice `id` as an `Idempotency-Key` header, so the government service can recognize a repeated submission.
+- **Config:** every environment variable is parsed with Zod at startup. The process exits if the config is invalid.
+- **Casing:** Prisma fields, database columns, and API JSON are all `camelCase`. Table names are plural `snake_case` through `@@map`. See `naming-conventions.md`.
 
-## Open items (not decided, do not assume)
+## Open items (not decided; do not assume)
 
-- Role permissions for `admin` and `member` (M1).
-- How the first admin of a company is created (M1).
-- Whether the path is versioned as `/api/v1/` (M3).
-- Whether the mock government API uses the same Supabase project as its environment (M4).
-- Whether the mock is deployed alongside prod so prod invoices can reach `SUBMITTED` (D12).
-- Which Supabase connection string (pooled or direct) suits serverless functions (M0 Vercel check).
+- Whether API paths use a `/api/v1/` prefix. The code uses `/api/...`, and the assessment shows both forms.
+- Whether the government stand-in becomes a separate HTTP service in the repository.
