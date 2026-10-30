@@ -1,0 +1,35 @@
+meta {
+  name: Test Math Validation Guardrail
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/api/invoices
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "invoiceNumber": "INV-1002",
+    "invoiceDate": "2026-10-30T00:00:00.000Z",
+    "customerName": "Acme Global",
+    "customerTaxId": "TIN-999-888",
+    "customerEmail": "billing@acmeglobal.com",
+    "currency": "USD",
+    "items": [
+      {
+        "description": "Tampered Line Item",
+        "quantity": 2,
+        "unitPrice": 100.00,
+        "tax": 20.00,
+        "lineTotal": 500.00
+      }
+    ]
+  }
+}

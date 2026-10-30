@@ -1,20 +1,60 @@
-#  Local documentation (not tracked)
-/local_docs/
-
-# macOS
-.DS_Store
-
-# Editor / IDE
-.vscode/
-.idea/
-
-# Dependencies and build output
+# Dependencies
 node_modules/
+.pnp
+.pnp.js
+
+# Build output
 dist/
 build/
-coverage/
+out/
+*.tsbuildinfo
+.vite/
 
-# Environment files: never commit real secrets, keep the examples
+# Environment and secrets (keep committed templates like .env.example)
 .env
 .env.*
 !.env.example
+*.pem
+*.key
+
+# Database data (Docker volumes are external, but guard local dumps)
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+*.sql.gz
+
+# Logs and runtime
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.npm/
+
+# Test and coverage
+coverage/
+.nyc_output/
+
+# Editor and IDE
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+.idea/
+*.swp
+*.swo
+.kiro/settings/local*
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Temporary
+tmp/
+temp/
+*.tmp

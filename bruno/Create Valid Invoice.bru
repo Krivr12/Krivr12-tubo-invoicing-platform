@@ -1,0 +1,42 @@
+meta {
+  name: Create Valid Invoice
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/api/invoices
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "invoiceNumber": "INV-1001",
+    "invoiceDate": "2026-10-30T00:00:00.000Z",
+    "customerName": "Acme Global",
+    "customerTaxId": "TIN-999-888",
+    "customerEmail": "billing@acmeglobal.com",
+    "currency": "USD",
+    "items": [
+      {
+        "description": "Cloud Architecture Consulting",
+        "quantity": 2,
+        "unitPrice": 500.00,
+        "tax": 100.00,
+        "lineTotal": 1100.00
+      },
+      {
+        "description": "Database Optimization",
+        "quantity": 1,
+        "unitPrice": 400.00,
+        "tax": 40.00,
+        "lineTotal": 440.00
+      }
+    ]
+  }
+}

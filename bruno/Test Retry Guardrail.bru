@@ -1,0 +1,15 @@
+meta {
+  name: Test Retry Guardrail
+  type: http
+  seq: 10
+}
+
+post {
+  url: {{baseUrl}}/api/invoices/<INVOICE-ID>/retry
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}

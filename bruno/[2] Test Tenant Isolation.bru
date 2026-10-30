@@ -1,0 +1,15 @@
+meta {
+  name: [2] Test Tenant Isolation
+  type: http
+  seq: 9
+}
+
+get {
+  url: {{baseUrl}}/api/invoices
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}

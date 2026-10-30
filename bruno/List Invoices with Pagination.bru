@@ -1,0 +1,21 @@
+meta {
+  name: List Invoices with Pagination
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{baseUrl}}/api/invoices?page=1&limit=10&status=FAILED
+  body: none
+  auth: bearer
+}
+
+params:query {
+  page: 1
+  limit: 10
+  status: FAILED
+}
+
+auth:bearer {
+  token: {{token}}
+}
